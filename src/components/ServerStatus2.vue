@@ -11,7 +11,7 @@
     <div :class="{ 'focused': isFocused }" class="servers-container">
       <div class="title-container">
         <i class="el-icon-connection"></i>
-        <h2>我的服务器</h2>
+        <h2>服务器状态</h2>
         <el-button
             class="back-btn"
             text
@@ -26,7 +26,7 @@
       </div>
 
       <div class="description">
-        以下是您当前绑定的所有服务器信息。
+        以下为当前公开可查询的服务器运行状态。
       </div>
 
       <div class="servers-content">
@@ -39,22 +39,22 @@
 
         <template v-else>
           <div v-if="servers.length === 0" class="no-data">
-            <el-empty description="暂无绑定的服务器"/>
+            <el-empty description="暂无服务器数据"/>
           </div>
 
           <div v-else class="server-list">
             <div v-for="server in servers"
-                 :key="server.ip + server.port"
+                 :key="server['连接地址'] + server['连接端口'] + (server['服务器名称'] || '')"
                  class="server-card animate-in">
               <div class="server-header">
                 <div class="server-name">
-                  <el-tag :type="server.status === 'OK' ? 'success' : 'danger'" size="small">
-                    {{ server.status === 'OK' ? '运行中' : '离线' }}
+                  <el-tag :type="server['在线状态'] === '在线' ? 'success' : 'danger'" size="small">
+                    {{ server['在线状态'] === '在线' ? '运行中' : '离线' }}
                   </el-tag>
-                  {{ server.nameTag }}
+                  {{ server['服务器名称'] }}
                 </div>
                 <div class="server-version">
-                  <el-tag size="small" type="info">{{ server.version }}</el-tag>
+                  <el-tag size="small" type="info">{{ server['版本'] }}</el-tag>
                 </div>
               </div>
 
@@ -62,12 +62,12 @@
                 <div class="info-item">
                   <i class="el-icon-connection"></i>
                   <span class="label">地址：</span>
-                  <span class="value">{{ server.ip }}:{{ server.port }}</span>
+                  <span class="value">{{ server['连接地址'] }}:{{ server['连接端口'] }}</span>
                   <el-button
                       class="copy-btn"
                       size="small"
                       text
-                      @click="copyToClipboard(`${server.ip}:${server.port}`)"
+                      @click="copyToClipboard(`${server['连接地址']}:${server['连接端口']}`)"
                   >
                     <el-icon>
                       <CopyDocument/>
@@ -78,13 +78,42 @@
                 <div class="info-item">
                   <i class="el-icon-cpu"></i>
                   <span class="label">核心：</span>
-                  <span class="value">{{ server.core }}</span>
+                  <span class="value">{{ server['核心'] }}</span>
+                </div>
+
+                <div class="info-item">
+                  <i class="el-icon-cpu"></i>
+                  <span class="label">Rcon：</span>
+                  <span class="value">
+                    <el-tag size="small" :type="server['Rcon连接'] === '成功' ? 'success' : 'danger'">
+                      {{ server['Rcon连接'] }}
+                    </el-tag>
+                  </span>
                 </div>
 
                 <div class="info-item">
                   <i class="el-icon-timer"></i>
-                  <span class="label">上线时间：</span>
-                  <span class="value">{{ server.up_time }}</span>
+                  <span class="label">在线人数：</span>
+                  <span class="value">{{ server['在线人数'] ?? '-' }} / {{ server['最大人数'] ?? '-' }}</span>
+                </div>
+
+                <div class="info-item">
+                  <i class="el-icon-timer"></i>
+                  <span class="label">延迟：</span>
+                  <span class="value">{{ server['延迟(ms)'] ?? '-' }} ms</span>
+                </div>
+
+                <div class="info-item">
+                  <i class="el-icon-cpu"></i>
+                  <span class="label">指标：</span>
+                  <span class="value">
+                    <el-tag
+                        size="small"
+                        :type="server['指标'] === '服务正常' ? 'success' : (server['指标'] === '服务降级' ? 'warning' : 'danger')"
+                    >
+                      {{ server['指标'] }}
+                    </el-tag>
+                  </span>
                 </div>
               </div>
             </div>
@@ -97,13 +126,12 @@
 
 <script setup>
 import {onMounted, ref} from 'vue';
-import {useRoute, useRouter} from 'vue-router';
+import {useRouter} from 'vue-router';
 import {ElMessage} from 'element-plus';
 import request from '../utils/request';
 import {Back, CopyDocument, Loading} from '@element-plus/icons-vue';
 import SakuraBackground from './common/SakuraBackground.vue';
 
-const route = useRoute();
 const router = useRouter();
 
 const loading = ref(false);
@@ -125,29 +153,22 @@ const copyToClipboard = async (text) => {
   }
 };
 
-const fetchServerInfo = async () => {
+const fetchServerStatus = async () => {
   loading.value = true;
   try {
-    const gameId = route.params.gameId;
-    if (!gameId) {
-      ElMessage.error('缺少必要的参数');
-      router.push('/');
-      return;
-    }
-
-    const response = await request.get(`/server/serverlist/getServerInfoByGameId/${gameId}`);
-
-    servers.value = response.data;
+    const response = await request.get('/api/v1/getServerStatus');
+    // 后端返回为 List<Map<String, Object>>，直接赋值即可
+    servers.value = Array.isArray(response.data) ? response.data : [];
   } catch (error) {
-    console.error('获取服务器信息失败：', error);
-    ElMessage.error('获取服务器信息失败，请检查网络或联系管理员');
+    console.error('获取服务器状态失败：', error);
+    ElMessage.error('获取服务器状态失败，请稍后重试');
   } finally {
     loading.value = false;
   }
 };
 
 onMounted(() => {
-  fetchServerInfo();
+  fetchServerStatus();
 });
 </script>
 
@@ -171,7 +192,7 @@ onMounted(() => {
   padding: 30px;
   border-radius: 24px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-  width: min(100%, 800px);
+  width: min(100%, 1000px);
   transform: translateY(0);
   transition: all 0.3s ease;
 }
@@ -285,7 +306,7 @@ onMounted(() => {
 .info-item .label {
   color: #666;
   margin-right: 8px;
-  min-width: 70px;
+  min-width: 80px;
 }
 
 .info-item .value {
@@ -397,3 +418,4 @@ onMounted(() => {
   }
 }
 </style>
+

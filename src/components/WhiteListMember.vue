@@ -232,10 +232,102 @@
         <template #footer>
           <div class="dialog-footer">
             <el-button
+                v-if="memberDetail && memberDetail['答题ID']"
+                type="primary"
+                round
+                :loading="quizLoading"
+                @click="viewQuizDetail()"
+            >查看答题详情
+            </el-button>
+            <el-button
                 round
                 @click="dialogVisible = false"
             >关闭
             </el-button>
+          </div>
+        </template>
+      </el-dialog>
+
+      <!-- 答题详情弹窗 -->
+      <el-dialog
+          v-model="quizDialogVisible"
+          :close-on-click-modal="true"
+          :show-close="true"
+          append-to-body
+          class="member-detail-dialog"
+          destroy-on-close
+          title="答题详情"
+          width="640px"
+      >
+        <div v-loading="quizLoading" class="member-detail">
+          <template v-if="quizDetail">
+            <template v-for="(val, key) in quizDetail" :key="key">
+              <!-- 专门渲染答题详情列表 -->
+              <div v-if="key === '答题详情' && Array.isArray(val)" class="detail-item" style="display:block">
+                <span class="detail-label" style="display:block;margin-bottom:8px">{{ key }}</span>
+                <div v-if="val.length">
+                  <div v-for="(q, idx) in val" :key="idx" class="quiz-item">
+                    <div class="quiz-row">
+                      <span class="quiz-label">问题类型</span>
+                      <span class="quiz-value">{{ mapQuestionType(q['问题类型']) }}</span>
+                    </div>
+                    <template v-if="q['问题类型'] !== 4">
+                      <div class="quiz-row">
+                        <span class="quiz-label">问题内容</span>
+                        <span class="quiz-value">{{ q['问题内容'] }}</span>
+                      </div>
+                      <div class="quiz-row" v-if="q['玩家答案']">
+                        <span class="quiz-label">玩家答案</span>
+                        <span class="quiz-value">{{ q['玩家答案'] }}</span>
+                      </div>
+                      <div class="quiz-row">
+                        <span class="quiz-label">是否正确</span>
+                        <span class="quiz-value">{{ q['是否正确'] }}</span>
+                      </div>
+                      <div class="quiz-row">
+                        <span class="quiz-label">得分</span>
+                        <span class="quiz-value">{{ q['得分'] }}</span>
+                      </div>
+                    </template>
+                    <template v-else>
+                      <div class="quiz-row">
+                        <span class="quiz-label">随机验证</span>
+                        <span class="quiz-value">{{ q['是否正确'] }}</span>
+                      </div>
+                    </template>
+                    <el-divider/>
+                  </div>
+                </div>
+                <div v-else class="quiz-empty">暂无数据</div>
+              </div>
+
+              <!-- 其他数组或普通键值通用渲染 -->
+              <div v-else-if="Array.isArray(val)" class="detail-item" style="display:block">
+                <span class="detail-label" style="display:block;margin-bottom:8px">{{ key }}</span>
+                <div v-if="val.length">
+                  <div v-for="(item, idx) in val" :key="idx" class="quiz-item">
+                    <template v-for="(v2, k2) in item" :key="`${idx}-${k2}`">
+                      <div v-if="k2 !== '@type'" class="quiz-row">
+                        <span class="quiz-label">{{ k2 }}</span>
+                        <span class="quiz-value">{{ v2 }}</span>
+                      </div>
+                    </template>
+                    <el-divider/>
+                  </div>
+                </div>
+                <div v-else class="quiz-empty">暂无数据</div>
+              </div>
+              <div v-else class="detail-item">
+                <span class="detail-label">{{ key }}</span>
+                <span class="detail-value">{{ key === '提交时间' ? formatToYMD(val) : val }}</span>
+              </div>
+            </template>
+          </template>
+        </div>
+
+        <template #footer>
+          <div class="dialog-footer">
+            <el-button round @click="quizDialogVisible = false">关闭</el-button>
           </div>
         </template>
       </el-dialog>
@@ -246,16 +338,11 @@
 <script setup>
 import {nextTick, onMounted, onUnmounted, reactive, ref, watch} from 'vue';
 import {ElMessage} from 'element-plus';
-import axios from 'axios';
+import request from '../utils/request';
 import {Camera, Close, Loading, Position, Refresh, User, VideoPause, VideoPlay, Warning} from '@element-plus/icons-vue';
 // 导入 skinview3d
 import * as skinview3d from 'skinview3d';
 import SakuraBackground from './common/SakuraBackground.vue'
-
-const http = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'https://application.shenzhuo.vip',
-  timeout: 8000
-});
 
 const whitelistData = reactive({});
 const loading = ref(false);
@@ -264,6 +351,9 @@ const lastUpdateTime = ref('');
 // 添加成员详情相关的响应式变量
 const dialogVisible = ref(false);
 const memberDetail = ref(null);
+const quizDialogVisible = ref(false);
+const quizLoading = ref(false);
+const quizDetail = ref(null);
 
 const skinViewerContainer = ref(null);
 const loadingSkin = ref(false);
@@ -286,51 +376,77 @@ let currentAnimationFrame = null; // 用于跟踪当前动画帧
 // 添加在线玩家状态的响应式变量
 const onlinePlayers = ref(new Set());
 
+// 用于背景组件的暗色标记（保持与主题逻辑一致）
+const isDark = ref(document.documentElement.classList.contains('dark') || document.documentElement.getAttribute('data-theme-mode') === 'dark');
+
+// 题型映射
+const mapQuestionType = (type) => {
+  const map = {
+    1: '单选题',
+    2: '多选题',
+    3: '填空题',
+    4: '随机验证'
+  };
+  return map[type] || type;
+};
+
+// 时间格式化为 yyyy-MM-dd
+const formatToYMD = (val) => {
+  if (!val) return '';
+  try {
+    const d = new Date(val);
+    if (Number.isNaN(d.getTime())) return String(val);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day} ${d.getHours()}:${d.getMinutes()}:${d.getSeconds()}`;
+  } catch (e) {
+    return String(val);
+  }
+};
+
 // 获取当前主题
 const currentTheme = ref(localStorage.getItem('theme') || 'default')
 
 // 添加初始加载状态
 const initialLoading = ref(true);
 
+
 const getWhiteList = (showMessage = false) => {
   loading.value = true;
   Promise.all([
-    http.get('/api/v1/getWhiteList'),
-    http.get('/api/v1/getOnlinePlayer')
-  ])
-      .then(([whitelistRes, onlineRes]) => {
-        if (whitelistRes.data.code === 200) {
-          // 处理白名单数据
-          Object.keys(whitelistData).forEach(key => delete whitelistData[key]);
-          Object.entries(whitelistRes.data.data).forEach(([server, membersStr]) => {
-            const members = membersStr
-                .replace(/^\[|\]$/g, '')
-                .split(',')
-                .map(member => member.trim())
-                .filter(member => member);
-            whitelistData[server] = members;
-          });
-        }
+    request.get('/api/v1/getWhiteList'),
+    request.get('/api/v1/getOnlinePlayer')
+  ]).then(([whitelistRes, onlineRes]) => {
+        const whitelistData_backend = whitelistRes.data;
+        const onlineData = onlineRes.data;
+        // 处理白名单数据
+        Object.keys(whitelistData).forEach(key => delete whitelistData[key]);
+        Object.entries(whitelistData_backend).forEach(([server, membersStr]) => {
+          const members = membersStr
+              .replace(/^\[|\]$/g, '')
+              .split(',')
+              .map(member => member.trim())
+              .filter(member => member);
+          whitelistData[server] = members;
+        });
 
         // 处理在线玩家数据
-        if (onlineRes.data.code === 200) {
-          const onlineData = onlineRes.data.data;
-          const onlineSet = new Set();
+        const onlineSet = new Set();
 
-          // 遍历所有服务器的在线玩家
-          Object.entries(onlineData).forEach(([serverName, serverData]) => {
-            if (serverName !== '查询时间' && serverData['在线玩家']) {
-              const players = serverData['在线玩家']
-                  .replace(/^\[|\]$/g, '')
-                  .split(',')
-                  .map(p => p.trim())
-                  .filter(p => p);
-              players.forEach(player => onlineSet.add(player));
-            }
-          });
+        // 遍历所有服务器的在线玩家
+        Object.entries(onlineData).forEach(([serverName, serverData]) => {
+          if (serverName !== '查询时间' && serverData['在线玩家']) {
+            const players = serverData['在线玩家']
+                .replace(/^\[|\]$/g, '')
+                .split(',')
+                .map(p => p.trim())
+                .filter(p => p);
+            players.forEach(player => onlineSet.add(player));
+          }
+        });
 
-          onlinePlayers.value = onlineSet;
-        }
+        onlinePlayers.value = onlineSet;
 
         lastUpdateTime.value = new Date().toLocaleString();
         if (showMessage) {
@@ -350,14 +466,10 @@ const getWhiteList = (showMessage = false) => {
 // 查看员详情
 const checkMemberDetail = (memberId) => {
   loading.value = true;
-  http.get(`/mc/whitelist/check?id=${memberId}`)
+  request.get(`/mc/whitelist/check?id=${memberId}`)
       .then((res) => {
-        if (res.data.code === 200) {
-          memberDetail.value = res.data.data;
-          dialogVisible.value = true;
-        } else {
-          ElMessage.error(res.data.msg || '获取成员详情失败');
-        }
+        memberDetail.value = res.data;
+        dialogVisible.value = true;
       })
       .catch((error) => {
         console.error('获取成员详情失败：', error);
@@ -365,6 +477,29 @@ const checkMemberDetail = (memberId) => {
       })
       .finally(() => {
         loading.value = false;
+      });
+};
+
+// 查看答题详情
+const viewQuizDetail = () => {
+  const quizId = memberDetail.value && (memberDetail.value['答题ID'] || memberDetail.value['quizId'] || memberDetail.value['答题编号']);
+  if (!quizId) {
+    ElMessage.warning('未找到答题ID');
+    return;
+  }
+  quizLoading.value = true;
+  quizDialogVisible.value = true;
+  quizDetail.value = null;
+  request.get(`/api/v1/getQuizDetail/${quizId}`)
+      .then((res) => {
+        quizDetail.value = res.data;
+      })
+      .catch((error) => {
+        console.error('获取答题详情失败：', error);
+        ElMessage.error('获取答题详情时发生错误，请检查网络或联系管理员');
+      })
+      .finally(() => {
+        quizLoading.value = false;
       });
 };
 
@@ -393,18 +528,13 @@ const loadAndRenderSkin = async (username) => {
 
     console.log('Loading skin for:', username);
 
-    const response = await http.get(`/mojang/user/${username}`);
-    console.log('Mojang API response:', response.data);
+    const response = await request.get(`/mojang/user/${username}`);
+    console.log('Mojang API response:', response);
 
-    if (response.data.code === 200) {
-      const skinData = response.data.data;
-      // 将皮肤数据存入缓存
-      skinCache.set(username, skinData);
-      await renderSkin(username, skinData);
-    } else {
-      skinLoadError.value = response.data.msg || '获取皮肤数据失败';
-      throw new Error(response.data.msg || '获取皮肤数据失败');
-    }
+    const skinData = response.data;
+    // 将皮肤数据存入缓存
+    skinCache.set(username, skinData);
+    await renderSkin(username, skinData);
   } catch (error) {
     console.error('加载皮肤失败：', error);
     skinLoadError.value = '无法加载玩家皮肤';
@@ -445,7 +575,7 @@ const renderSkin = async (username, skinData) => {
     });
 
     // 加载皮肤
-    const baseUrl = import.meta.env.VITE_API_URL || 'https://application.shenzhuo.vip';
+    const baseUrl = import.meta.env.VITE_API_URL;
     const skinUrl = `${baseUrl}/mojang/texture?url=${encodeURIComponent(skinData.skin.url)}`;
 
     const loadingPromise = viewer.loadSkin(skinUrl);
@@ -925,6 +1055,37 @@ onMounted(() => {
     width: 100%;
     text-align: left;
   }
+}
+
+/* 答题详情排版优化 */
+.quiz-item {
+  padding: 8px 0;
+}
+
+.quiz-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+}
+
+.quiz-label {
+  color: #606266;
+  min-width: 80px;
+  font-weight: 500;
+}
+
+.quiz-value {
+  color: #409EFF;
+  text-align: right;
+  flex: 1;
+  word-break: break-all;
+  white-space: pre-wrap;
+}
+
+.quiz-empty {
+  color: #909399;
+  padding: 6px 0;
 }
 
 .dialog-header {

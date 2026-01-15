@@ -16,16 +16,16 @@
       </el-button>
     </div>
 
-    <div class="servers-container">
-      <div v-if="loading" class="loading-state">
-        <el-icon class="loading-icon"><Loading /></el-icon>
+    <div class="grid-container">
+      <div v-if="loading" class="state-container">
+        <el-icon class="icon-large icon-primary loading-icon"><Loading /></el-icon>
         <span>加载中...</span>
       </div>
 
       <template v-else>
         <div v-for="server in servers"
              :key="server.name"
-             class="server-card animate-in">
+             class="card-small animate-in">
           <div class="server-header">
             <div class="server-name">
               <el-icon><Monitor /></el-icon>
@@ -42,7 +42,7 @@
               <el-tag
                 v-for="player in server.players"
                 :key="player"
-                class="player-tag"
+                class="tag"
                 effect="light"
               >
                 {{ player }}
@@ -64,50 +64,43 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
-import axios from 'axios'
-import { Back, Loading, Monitor, Refresh, Timer, User } from '@element-plus/icons-vue'
+import {onMounted, ref} from 'vue'
+import {ElMessage} from 'element-plus'
+import request from '../utils/request'
+import {Back, Loading, Monitor, Refresh, Timer, User} from '@element-plus/icons-vue'
 
 const loading = ref(false)
 const servers = ref([])
 const queryTime = ref('-')
 
-const http = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'https://application.shenzhuo.vip',
-  timeout: 8000
-})
-
 const refreshStatus = async () => {
   loading.value = true
   try {
-    const res = await http.get('/api/v1/getOnlinePlayer')
-    if (res.data.code === 200) {
-      const data = res.data.data
-      servers.value = []
+    const res = await request.get('/api/v1/getOnlinePlayer')
+    const data = res.data
+    servers.value = []
 
-      Object.entries(data).forEach(([serverName, serverData]) => {
-        if (serverName === '查询时间') {
-          queryTime.value = serverData
-          return
-        }
+    Object.entries(data).forEach(([serverName, serverData]) => {
+      if (serverName === '查询时间') {
+        queryTime.value = serverData
+        return
+      }
 
-        let players = []
-        const playersStr = serverData['在线玩家']
-        if (playersStr) {
-          players = playersStr.replace(/^\[|\]$/g, '').split(',')
-            .map(p => p.trim())
-            .filter(p => p)
-        }
+      let players = []
+      const playersStr = serverData['在线玩家']
+      if (playersStr) {
+        players = playersStr.replace(/^\[|\]$/g, '').split(',')
+          .map(p => p.trim())
+          .filter(p => p)
+      }
 
-        servers.value.push({
-          name: serverName,
-          playerCount: serverData['在线人数'],
-          players: players
-        })
+      servers.value.push({
+        name: serverName,
+        playerCount: serverData['在线人数'],
+        players: players
       })
-      ElMessage.success('刷新成功')
-    }
+    })
+    ElMessage.success('刷新成功')
   } catch (error) {
     console.error('获取服务器状态失败：', error)
     ElMessage.error('获取服务器状态失败')
@@ -131,40 +124,14 @@ onMounted(() => {
   font-family: 'CustomFont', sans-serif;
 }
 
-.header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 30px;
-  background: var(--theme-bg);
-  padding: 15px 20px;
-  border-radius: 12px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-}
-
 .header h2 {
   margin: 0;
   color: var(--theme-primary);
 }
 
-.servers-container {
-  display: grid;
-  gap: 20px;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-}
+/* 网格布局样式已移至通用样式文件 */
 
-.server-card {
-  background: var(--theme-bg);
-  border-radius: 12px;
-  padding: 20px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  transition: all 0.3s ease;
-}
-
-.server-card:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
-}
+/* 服务器卡片样式已移至通用样式文件 */
 
 .server-header {
   display: flex;
@@ -199,16 +166,7 @@ onMounted(() => {
   gap: 8px;
 }
 
-.player-tag {
-  background-color: rgba(var(--theme-secondary-rgb), 0.1);
-  border: 1px solid var(--theme-border);
-  transition: all 0.3s ease;
-}
-
-.player-tag:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 8px rgba(var(--theme-secondary-rgb), 0.15);
-}
+/* 玩家标签样式已移至通用样式文件 */
 
 .no-players {
   color: var(--theme-text);
@@ -281,8 +239,14 @@ onMounted(() => {
     padding: 10px 15px;
   }
 
-  .server-card {
-    margin-bottom: 15px;
-  }
+     .server-card {
+     margin-bottom: 15px;
+   }
+ }
+
+/* Element Plus 组件样式覆盖 */
+:deep(.el-button),
+:deep(.el-tag) {
+  font-family: 'CustomFont', sans-serif;
 }
 </style> 

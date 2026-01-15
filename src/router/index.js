@@ -19,6 +19,15 @@ const router = createRouter({
             component: () => import('../components/ServerStatus.vue')
         },
         {
+            path: '/server-status2',
+            name: 'serverStatus2',
+            component: () => import('../components/ServerStatus2.vue')
+        },
+        {
+            path: '/player-servers',
+            redirect: '/404'
+        },
+        {
             path: '/player-servers/:gameId',
             name: 'playerServers',
             component: () => import('../components/PlayerServers.vue')
@@ -27,6 +36,11 @@ const router = createRouter({
             path: '/404',
             name: 'NotFound',
             component: () => import('../views/NotFound.vue')
+        },
+        {
+            path: '/quiz',
+            name: 'quiz',
+            component: () => import('../views/WhitelistQuiz.vue')
         },
         {
             path: '/verify',

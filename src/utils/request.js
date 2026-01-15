@@ -1,23 +1,47 @@
 import axios from 'axios'
 import {ElMessage} from 'element-plus'
 import router from '../router'
+import {addIPToHeaders} from './ipUtils'
+import authUtils from './authUtils'
 
 const request = axios.create({
     baseURL: import.meta.env.VITE_API_URL,
     timeout: 8000
 })
 
+// 请求拦截器：自动添加IP信息和鉴权头
+request.interceptors.request.use(
+    async (config) => {
+        // 为所有请求自动添加IP信息
+        config.headers = await addIPToHeaders(config.headers || {})
+        
+        // 为所有请求自动添加鉴权头
+        const authHeaders = authUtils.generateAuthHeaders()
+        config.headers = {
+            ...config.headers,
+            ...authHeaders
+        }
+        
+        return config
+    },
+    (error) => {
+        return Promise.reject(error)
+    }
+)
+
 // 添加重试机制
 request.interceptors.response.use(
     response => {
         const {code, msg, data} = response.data
-        if (code === 200) return data
+        if (code === 200) return response.data
 
         // 处理特定错误码
         switch (code) {
+            case 400:
+                ElMessage.error('请求参数错误')
+                break
             case 401:
                 ElMessage.error('未授权访问')
-                router.push('/login')
                 break
             case 403:
                 ElMessage.error('访问被拒绝')
