@@ -1,0 +1,10 @@
+{
+  // 替换为你的项目名称（自定义，如 whitelist-app）
+  "name": "whitelist-vue",
+  // 兼容性日期，填写当前日期即可（格式：YYYY-MM-DD）
+  "compatibility_date": "2026-01-15",
+  // 指定静态资产目录为 Vite 构建的 dist 文件夹
+  "assets": {
+    "directory": "./dist"
+  }
+}
